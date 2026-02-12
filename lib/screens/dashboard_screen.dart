@@ -408,6 +408,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // --- PERBAIKAN: FOTO SUDAH MUNCUL KEMBALI ---
+  // --- PERBAIKAN: FOTO TAMPIL DENGAN LOGIKA CERDAS ---
   Widget _buildRecentList() {
     List recent = _data!['recent_attendances'] ?? [];
     if (recent.isEmpty) {
@@ -423,13 +424,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: recent.map<Widget>((item) {
         bool isLate = (item['status'] ?? '').toString().toLowerCase().contains('telat');
 
-        // Logika untuk menampilkan Foto
-        String? photoPath = item['photo_path'];
+        // === PERBAIKAN LOGIKA FOTO DI SINI ===
         String? fullPhotoUrl;
-        if (photoPath != null && photoPath.isNotEmpty) {
-          // Pakai route bypass hosting
-          fullPhotoUrl = "https://presensimusik.infinityfreeapp.com/lihat-gambar/$photoPath";
+        // 1. Cek kedua kemungkinan key: 'photo' (biasanya dari dashboard) atau 'photo_path'
+        String? rawPhoto = item['photo'] ?? item['photo_path'];
+
+        if (rawPhoto != null && rawPhoto.isNotEmpty) {
+          if (rawPhoto.startsWith('http')) {
+            // Jika backend sudah kirim URL lengkap, pakai langsung
+            fullPhotoUrl = rawPhoto;
+          } else {
+            // Jika backend kirim path relatif, tambahkan prefix bypass
+            String cleanPath = rawPhoto.replaceAll(RegExp(r'^/'), '');
+            fullPhotoUrl = "https://presensimusik.infinityfreeapp.com/lihat-gambar/$cleanPath";
+          }
         }
+        // ======================================
 
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
