@@ -5,7 +5,7 @@ import 'login_webview.dart';
 
 class MonitoringScreen extends StatefulWidget {
   final int scheduleId;
-  final String? scheduleName; // Judul jadwal (opsional)
+  final String? scheduleName;
 
   const MonitoringScreen({
     super.key,
@@ -32,6 +32,10 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
     setState(() => _isLoading = true);
     try {
       final result = await _api.getMonitoring(widget.scheduleId);
+
+      // DEBUG: Lihat isi data di console
+      print("DATA MONITORING: $result");
+
       if (mounted) {
         setState(() {
           _data = result;
@@ -58,18 +62,15 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
     }
   }
 
-  // --- FUNGSI POPUP FOTO BESAR ---
   void _showFullImage(BuildContext context, String imageUrl, String name) {
     showDialog(
       context: context,
       builder: (_) => Dialog(
         backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(10),
         child: Stack(
           alignment: Alignment.topRight,
           children: [
             Container(
-              width: double.infinity,
               padding: const EdgeInsets.all(5),
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -83,6 +84,13 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
                     child: Image.network(
                       imageUrl,
                       fit: BoxFit.contain,
+                      loadingBuilder: (ctx, child, progress) {
+                        if (progress == null) return child;
+                        return const SizedBox(
+                          height: 100,
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      },
                       errorBuilder: (ctx, err, stack) => const Column(
                         children: [
                           Icon(Icons.broken_image, size: 50, color: Colors.grey),
@@ -93,22 +101,16 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
                   ),
                   const SizedBox(height: 10),
                   Text(name, style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16)),
-                  const SizedBox(height: 5),
                 ],
               ),
             ),
-            // Tombol Close X
-            Positioned(
-              right: 0,
-              top: 0,
-              child: IconButton(
-                icon: const CircleAvatar(
-                  backgroundColor: Colors.red,
-                  radius: 14,
-                  child: Icon(Icons.close, size: 16, color: Colors.white),
-                ),
-                onPressed: () => Navigator.pop(context),
+            IconButton(
+              icon: const CircleAvatar(
+                backgroundColor: Colors.red,
+                radius: 14,
+                child: Icon(Icons.close, size: 16, color: Colors.white),
               ),
+              onPressed: () => Navigator.pop(context),
             ),
           ],
         ),
@@ -119,7 +121,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA), // Background modern
+      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -129,13 +131,13 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
               style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87),
             ),
             Text(
-              "Real-time Data",
+              _data != null ? "${_data!['total_attendances'] ?? 0} Hadir" : "Memuat...",
               style: GoogleFonts.poppins(fontSize: 12, color: Colors.green),
             ),
           ],
         ),
         backgroundColor: Colors.white,
-        elevation: 0,
+        elevation: 1,
         iconTheme: const IconThemeData(color: Colors.black87),
         actions: [
           IconButton(onPressed: _loadMonitoring, icon: const Icon(Icons.refresh))
@@ -150,8 +152,8 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
   }
 
   Widget _buildContent() {
-    // Ambil list kehadiran. Prioritas: key 'attendances', lalu 'data'
-    List attendees = _data?['attendances'] ?? _data?['data'] ?? [];
+    // Backend Anda menggunakan key 'data', jadi kita ambil itu.
+    List attendees = _data?['data'] ?? [];
 
     if (attendees.isEmpty) {
       return Center(
@@ -172,27 +174,24 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
       itemBuilder: (context, index) {
         final item = attendees[index];
 
-        // 1. PERBAIKAN URL FOTO (Gunakan route lihat-gambar agar tidak error)
-        String? photoUrl;
-        String rawPhoto = item['photo_path'] ?? item['photo_url']; // Cek kedua key
-        if (rawPhoto != null && rawPhoto.isNotEmpty) {
-          // Pastikan tidak double slash jika rawPhoto sudah ada '/'
-          String cleanPath = rawPhoto.replaceAll(RegExp(r'^/'), '');
-          photoUrl = "https://presensimusik.infinityfreeapp.com/lihat-gambar/$cleanPath";
-        }
-
-        // 2. DATA TEXT
+        // 1. DATA NAMA & INFO
         String name = item['guest_name'] ?? item['name'] ?? 'Tanpa Nama';
         String instrument = item['instrument'] ?? '-';
-        String checkIn = item['check_in_at'] ?? item['check_in_time'] ?? '-';
+        String checkIn = item['check_in_time'] ?? item['check_in_at'] ?? '-';
 
-        // 3. LOGIKA TELAT & MENIT
-        String statusRaw = item['status'] ?? 'Hadir';
-        bool isLate = statusRaw.toLowerCase().contains("telat") || statusRaw.toLowerCase().contains("terlambat");
-        int lateMinutes = item['late_minutes'] ?? 0;
+        // 2. LOGIKA URL FOTO (Anti Error 404)
+        String? photoUrl;
+        String? rawPhoto = item['photo_url']; // Sesuai update backend di atas
 
-        // Jika API belum mengirim late_minutes, kita bisa hitung manual (opsional/kompleks)
-        // Tapi di sini kita tampilkan jika ada datanya.
+        if (rawPhoto != null && rawPhoto.isNotEmpty) {
+          // Backend sudah mengirim full URL (https://...), jadi langsung pakai
+          photoUrl = rawPhoto;
+        }
+
+        // 3. LOGIKA STATUS & TELAT
+        bool isLate = (item['status'] ?? '').toString().toLowerCase().contains('terlambat');
+        int lateMinutes = item['late_minutes'] ?? 0; // Backend sudah kirim ini sekarang
+
         String statusDisplay = isLate ? "TERLAMBAT" : "TEPAT WAKTU";
         if (isLate && lateMinutes > 0) {
           statusDisplay += "\n($lateMinutes Menit)";
@@ -205,7 +204,6 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
           child: InkWell(
             borderRadius: BorderRadius.circular(12),
             onTap: () {
-              // TAP CARD UNTUK LIHAT FOTO BESAR
               if (photoUrl != null) {
                 _showFullImage(context, photoUrl, name);
               } else {
@@ -216,9 +214,9 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
               padding: const EdgeInsets.all(12),
               child: Row(
                 children: [
-                  // AVATAR / FOTO
+                  // AVATAR
                   Hero(
-                    tag: "avatar_$index", // Efek animasi saat popup
+                    tag: "avatar_$index",
                     child: CircleAvatar(
                       radius: 30,
                       backgroundColor: Colors.indigo.shade50,
@@ -230,7 +228,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
                   ),
                   const SizedBox(width: 15),
 
-                  // INFO TENGAH
+                  // INFO UTAMA
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -261,7 +259,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
                     ),
                   ),
 
-                  // STATUS KANAN
+                  // STATUS BADGE
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
