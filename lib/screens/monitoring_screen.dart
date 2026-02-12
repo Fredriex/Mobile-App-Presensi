@@ -5,7 +5,7 @@ import 'login_webview.dart';
 
 class MonitoringScreen extends StatefulWidget {
   final int scheduleId;
-  final String? scheduleName; // Opsional, untuk judul AppBar
+  final String? scheduleName; // Judul jadwal (opsional)
 
   const MonitoringScreen({
     super.key,
@@ -25,10 +25,10 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _loadMonitoring();
   }
 
-  Future<void> _loadData() async {
+  Future<void> _loadMonitoring() async {
     setState(() => _isLoading = true);
     try {
       final result = await _api.getMonitoring(widget.scheduleId);
@@ -41,56 +41,75 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
     } catch (e) {
       if (e.toString().contains("BLOCK_BY_INFINITYFREE")) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Menghubungkan ke Server...")));
-          await Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginWebview()));
-          _loadData();
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const LoginWebview()),
+          );
+          _loadMonitoring();
         }
       } else {
         if (mounted) {
           setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Gagal memuat: $e")));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Error: $e")),
+          );
         }
       }
     }
   }
 
-  // Menampilkan Foto Fullscreen
-  void _showPhotoDialog(String photoUrl, String name) {
+  // --- FUNGSI POPUP FOTO BESAR ---
+  void _showFullImage(BuildContext context, String imageUrl, String name) {
     showDialog(
       context: context,
       builder: (_) => Dialog(
         backgroundColor: Colors.transparent,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        insetPadding: const EdgeInsets.all(10),
+        child: Stack(
+          alignment: Alignment.topRight,
           children: [
             Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(5),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(12),
               ),
-              padding: const EdgeInsets.all(8),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(8),
                     child: Image.network(
-                      photoUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (ctx, err, stack) => const Icon(Icons.broken_image, size: 100, color: Colors.grey),
+                      imageUrl,
+                      fit: BoxFit.contain,
+                      errorBuilder: (ctx, err, stack) => const Column(
+                        children: [
+                          Icon(Icons.broken_image, size: 50, color: Colors.grey),
+                          Text("Gagal memuat gambar"),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Text(name, style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16)),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 5),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-            FloatingActionButton(
-              backgroundColor: Colors.white,
-              child: const Icon(Icons.close, color: Colors.black),
-              onPressed: () => Navigator.pop(context),
-            )
+            // Tombol Close X
+            Positioned(
+              right: 0,
+              top: 0,
+              child: IconButton(
+                icon: const CircleAvatar(
+                  backgroundColor: Colors.red,
+                  radius: 14,
+                  child: Icon(Icons.close, size: 16, color: Colors.white),
+                ),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
           ],
         ),
       ),
@@ -99,204 +118,173 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Ambil data statistik dari JSON (pastikan backend mengirim key ini)
-    // Jika backend strukturnya { "schedule": {...}, "attendances": [...], "summary": { "total": 10, ... } }
-    // Sesuaikan parsing di bawah ini. Kode ini mengasumsikan kita hitung manual atau backend kirim flat.
-
-    final List attendances = _data?['attendances'] ?? [];
-
-    // Hitung manual statistik jika backend tidak menyediakan ringkasan langsung
-    int total = attendances.length;
-    int lateCount = attendances.where((a) => (a['is_late'] == 1 || a['is_late'] == true || (a['late_minutes'] ?? 0) > 0)).length;
-    int onTimeCount = total - lateCount;
-
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: const Color(0xFFF5F7FA), // Background modern
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.scheduleName ?? "Detail Monitoring", style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87)),
-            Text("Live Update", style: GoogleFonts.poppins(fontSize: 12, color: Colors.green)),
+            Text(
+              widget.scheduleName ?? "Monitoring Live",
+              style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87),
+            ),
+            Text(
+              "Real-time Data",
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.green),
+            ),
           ],
         ),
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black87),
         actions: [
-          IconButton(onPressed: _loadData, icon: const Icon(Icons.refresh))
+          IconButton(onPressed: _loadMonitoring, icon: const Icon(Icons.refresh))
         ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-        onRefresh: _loadData,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 1. STATISTIK CARD ROW
-              Row(
-                children: [
-                  Expanded(child: _buildStatCard("Total", "$total", Colors.blueAccent, Icons.group)),
-                  const SizedBox(width: 12),
-                  Expanded(child: _buildStatCard("Tepat", "$onTimeCount", Colors.green, Icons.check_circle)),
-                  const SizedBox(width: 12),
-                  Expanded(child: _buildStatCard("Telat", "$lateCount", Colors.redAccent, Icons.warning)),
-                ],
-              ),
-
-              const SizedBox(height: 24),
-
-              // 2. HEADER LIST
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text("Daftar Kehadiran", style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold)),
-                  Text("${attendances.length} Orang", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // 3. ATTENDANCE LIST
-              attendances.isEmpty
-                  ? _buildEmptyState()
-                  : ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: attendances.length,
-                separatorBuilder: (ctx, i) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final item = attendances[index];
-                  return _buildAttendeeCard(item);
-                },
-              ),
-              const SizedBox(height: 40),
-            ],
-          ),
-        ),
-      ),
+          : _data == null
+          ? const Center(child: Text("Gagal memuat data"))
+          : _buildContent(),
     );
   }
 
-  // --- WIDGET HELPER: KARTU PESERTA ---
-  Widget _buildAttendeeCard(dynamic item) {
-    bool isLate = (item['late_minutes'] ?? 0) > 0;
+  Widget _buildContent() {
+    // Ambil list kehadiran. Prioritas: key 'attendances', lalu 'data'
+    List attendees = _data?['attendances'] ?? _data?['data'] ?? [];
 
-    // URL Foto dengan bypass hosting
-    String? photoPath = item['photo_path'];
-    String? fullPhotoUrl;
-    if (photoPath != null && photoPath.isNotEmpty) {
-      fullPhotoUrl = "https://presensimusik.infinityfreeapp.com/lihat-gambar/$photoPath";
+    if (attendees.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.person_off_rounded, size: 60, color: Colors.grey[300]),
+            const SizedBox(height: 10),
+            Text("Belum ada data kehadiran.", style: GoogleFonts.poppins(color: Colors.grey)),
+          ],
+        ),
+      );
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2))],
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(12),
-        // FOTO PROFIL
-        leading: GestureDetector(
-          onTap: () {
-            if (fullPhotoUrl != null) _showPhotoDialog(fullPhotoUrl, item['guest_name']);
-          },
-          child: CircleAvatar(
-            radius: 28,
-            backgroundColor: Colors.indigo.shade50,
-            backgroundImage: fullPhotoUrl != null ? NetworkImage(fullPhotoUrl) : null,
-            child: fullPhotoUrl == null
-                ? Text((item['guest_name'] ?? 'U')[0].toUpperCase(), style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.indigo))
-                : null,
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: attendees.length,
+      itemBuilder: (context, index) {
+        final item = attendees[index];
+
+        // 1. PERBAIKAN URL FOTO (Gunakan route lihat-gambar agar tidak error)
+        String? photoUrl;
+        String rawPhoto = item['photo_path'] ?? item['photo_url']; // Cek kedua key
+        if (rawPhoto != null && rawPhoto.isNotEmpty) {
+          // Pastikan tidak double slash jika rawPhoto sudah ada '/'
+          String cleanPath = rawPhoto.replaceAll(RegExp(r'^/'), '');
+          photoUrl = "https://presensimusik.infinityfreeapp.com/lihat-gambar/$cleanPath";
+        }
+
+        // 2. DATA TEXT
+        String name = item['guest_name'] ?? item['name'] ?? 'Tanpa Nama';
+        String instrument = item['instrument'] ?? '-';
+        String checkIn = item['check_in_at'] ?? item['check_in_time'] ?? '-';
+
+        // 3. LOGIKA TELAT & MENIT
+        String statusRaw = item['status'] ?? 'Hadir';
+        bool isLate = statusRaw.toLowerCase().contains("telat") || statusRaw.toLowerCase().contains("terlambat");
+        int lateMinutes = item['late_minutes'] ?? 0;
+
+        // Jika API belum mengirim late_minutes, kita bisa hitung manual (opsional/kompleks)
+        // Tapi di sini kita tampilkan jika ada datanya.
+        String statusDisplay = isLate ? "TERLAMBAT" : "TEPAT WAKTU";
+        if (isLate && lateMinutes > 0) {
+          statusDisplay += "\n($lateMinutes Menit)";
+        }
+
+        return Card(
+          elevation: 2,
+          margin: const EdgeInsets.only(bottom: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () {
+              // TAP CARD UNTUK LIHAT FOTO BESAR
+              if (photoUrl != null) {
+                _showFullImage(context, photoUrl, name);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Tidak ada foto")));
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  // AVATAR / FOTO
+                  Hero(
+                    tag: "avatar_$index", // Efek animasi saat popup
+                    child: CircleAvatar(
+                      radius: 30,
+                      backgroundColor: Colors.indigo.shade50,
+                      backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
+                      child: photoUrl == null
+                          ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.indigo))
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(width: 15),
+
+                  // INFO TENGAH
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 15),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.music_note, size: 14, color: Colors.grey),
+                            const SizedBox(width: 4),
+                            Text(instrument, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[700])),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            const Icon(Icons.access_time, size: 14, color: Colors.grey),
+                            const SizedBox(width: 4),
+                            Text(checkIn, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[700])),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // STATUS KANAN
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isLate ? Colors.red.withOpacity(0.1) : Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: isLate ? Colors.red.withOpacity(0.3) : Colors.green.withOpacity(0.3)),
+                    ),
+                    child: Text(
+                      statusDisplay,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: isLate ? Colors.red : Colors.green,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-        // NAMA & INSTRUMEN
-        title: Text(
-          item['guest_name'] ?? 'Tanpa Nama',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 15),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Icon(Icons.music_note, size: 14, color: Colors.grey[600]),
-                const SizedBox(width: 4),
-                Text(item['instrument'] ?? '-', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[700])),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Row(
-              children: [
-                Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
-                const SizedBox(width: 4),
-                // Pastikan API mengirim 'check_in_time' atau format jamnya
-                Text(item['check_in_at'] != null ? item['check_in_at'].toString().split(' ').last.substring(0,5) : '-', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[700])),
-              ],
-            ),
-          ],
-        ),
-        // STATUS BADGE
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: isLate ? Colors.red.withOpacity(0.1) : Colors.green.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                isLate ? "Telat ${item['late_minutes']}m" : "Tepat Waktu",
-                style: GoogleFonts.poppins(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: isLate ? Colors.red : Colors.green,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // --- WIDGET HELPER: STATISTIK ---
-  Widget _buildStatCard(String label, String value, Color color, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)],
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 8),
-          Text(value, style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87)),
-          Text(label, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        children: [
-          const SizedBox(height: 40),
-          Icon(Icons.person_off_rounded, size: 60, color: Colors.grey[300]),
-          const SizedBox(height: 10),
-          Text("Belum ada yang hadir.", style: GoogleFonts.poppins(color: Colors.grey)),
-        ],
-      ),
+        );
+      },
     );
   }
 }
