@@ -4,7 +4,7 @@ import '../services/api_service.dart';
 import 'login_webview.dart';
 import 'manage_schedule_screen.dart'; // Menu Kelola (CRUD)
 import 'qr_display_screen.dart';
-
+import 'monitoring_screen.dart';
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -123,11 +123,13 @@ class _HomeScreenState extends State<HomeScreen> {
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: () {
-            // --- SEMENTARA: PESAN SAJA ---
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("Fitur Monitoring Detail untuk '${item['name']}' akan segera hadir."),
-                behavior: SnackBarBehavior.floating,
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => MonitoringScreen(
+                  scheduleId: item['id'],
+                  scheduleName: item['name'] ?? 'Detail Monitoring',
+                ),
               ),
             );
           },

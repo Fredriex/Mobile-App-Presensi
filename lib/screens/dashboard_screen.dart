@@ -7,6 +7,7 @@ import 'login_webview.dart';
 import 'manage_schedule_screen.dart';
 import 'home_screen.dart';
 // import 'monitoring_screen.dart'; // Matikan jika belum ada
+import 'monitoring_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -221,12 +222,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: Colors.grey.shade200),
         ),
+
         child: Column(
           children: [
             Icon(Icons.event_busy_rounded, size: 40, color: Colors.grey.shade300),
             const SizedBox(height: 10),
             Text("Tidak ada jadwal aktif saat ini", style: GoogleFonts.poppins(color: Colors.grey)),
           ],
+
         ),
       );
     }
@@ -283,7 +286,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Fitur Detail Monitoring")));
+                // Pastikan parameter id dan name dikirim ke MonitoringScreen
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => MonitoringScreen(
+                            scheduleId: active['id'],
+                            scheduleName: active['name']
+                        )
+                    )
+                );
               },
               icon: const Icon(Icons.visibility, color: Color(0xFF4F46E5)),
               label: const Text("Lihat Monitoring Live"),
