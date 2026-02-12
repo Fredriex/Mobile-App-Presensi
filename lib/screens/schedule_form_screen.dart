@@ -82,7 +82,8 @@ class _ScheduleFormScreenState extends State<ScheduleFormScreen> {
     if (time == null) return null;
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
+    // Tambahkan :00 di belakang agar format jadi HH:mm:ss
+    return '$hour:$minute:00';
   }
 
   Future<void> _submit() async {

@@ -48,22 +48,48 @@ class ApiService {
     } catch (e) { rethrow; }
   }
 
+  // CREATE JADWAL (Dengan Debugging Error)
   Future<bool> createSchedule(Map<String, dynamic> data) async {
     final headers = await _getHeaders();
-    try {
-      final response = await http.post(Uri.parse('$baseUrl/schedules'), headers: headers, body: jsonEncode(data));
-      _checkBlock(response);
-      return response.statusCode == 200;
-    } catch (e) { rethrow; }
+    print("Kirim Data Create: ${jsonEncode(data)}"); // Debug 1
+
+    final response = await http.post(
+        Uri.parse('$baseUrl/schedules'),
+        headers: headers,
+        body: jsonEncode(data)
+    );
+
+    _checkBlock(response);
+
+    print("Response Status: ${response.statusCode}"); // Debug 2
+    print("Response Body: ${response.body}");         // Debug 3 (PENTING)
+
+    if (response.statusCode == 200) {
+      return true;
+    } else {
+      // Tangkap pesan error dari Laravel dan lempar ke UI
+      final body = jsonDecode(response.body);
+      throw Exception(body['message'] ?? "Gagal Simpan: ${response.statusCode}");
+    }
   }
 
+  // UPDATE JADWAL (Dengan Debugging Error)
   Future<bool> updateSchedule(int id, Map<String, dynamic> data) async {
     final headers = await _getHeaders();
-    try {
-      final response = await http.put(Uri.parse('$baseUrl/schedules/$id'), headers: headers, body: jsonEncode(data));
-      _checkBlock(response);
-      return response.statusCode == 200;
-    } catch (e) { rethrow; }
+    final response = await http.put(
+        Uri.parse('$baseUrl/schedules/$id'),
+        headers: headers,
+        body: jsonEncode(data)
+    );
+
+    _checkBlock(response);
+
+    if (response.statusCode == 200) {
+      return true;
+    } else {
+      final body = jsonDecode(response.body);
+      throw Exception(body['message'] ?? "Gagal Update: ${response.statusCode}");
+    }
   }
 
   Future<bool> deleteSchedule(int id) async {
