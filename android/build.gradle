@@ -1,0 +1,37 @@
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.buildDir = "../build"
+
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+
+// --- BAGIAN PERBAIKAN TOTAL (FIX ERROR JAVA VERSION) ---
+subprojects {
+    project.configurations.all {
+        resolutionStrategy.eachDependency { details ->
+            // 1. Fix untuk Bouncy Castle (Error sebelumnya)
+            if (details.requested.group == 'org.bouncycastle' && details.requested.name == 'bcprov-jdk18on') {
+                details.useVersion '1.76'
+            }
+            // 2. Fix untuk Byte Buddy (Error yang baru muncul sekarang)
+            if (details.requested.group == 'net.bytebuddy' && details.requested.name == 'byte-buddy') {
+                details.useVersion '1.14.11' // Versi stabil yang kompatibel dengan Android Studio
+            }
+        }
+    }
+}
+// ------------------------------------------------------
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}
