@@ -110,19 +110,48 @@ class ApiService {
   }
 
 
-  Future<bool> updateQrSpot(int id, int? scheduleId) async {
+
+
+// --- QR SPOTS CRUD ---
+
+
+  // CREATE
+  Future<bool> createQrSpot(String name, String uniqueCode) async {
     final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/qr-spots'),
+      headers: headers,
+      body: jsonEncode({"name": name, "unique_code": uniqueCode}),
+    );
+    _checkBlock(response);
+    return response.statusCode == 200;
+  }
+
+  // UPDATE (Bisa update jadwal, atau update nama/kode)
+  Future<bool> updateQrSpot(int id, {String? name, String? uniqueCode, int? scheduleId}) async {
+    final headers = await _getHeaders();
+
+    // Buat body dinamis sesuai apa yang dikirim
+    Map<String, dynamic> body = {};
+    if (name != null) body['name'] = name;
+    if (uniqueCode != null) body['unique_code'] = uniqueCode;
+    // Kita gunakan teknik khusus agar bisa mengirim null (untuk disconnect jadwal)
+    if (scheduleId != -999) body['current_schedule_id'] = scheduleId;
 
     final response = await http.put(
       Uri.parse('$baseUrl/qr-spots/$id'),
       headers: headers,
-      body: jsonEncode({
-        "current_schedule_id": scheduleId
-      }),
+      body: jsonEncode(body),
     );
-
     _checkBlock(response);
+    return response.statusCode == 200;
+  }
 
+  // DELETE
+  Future<bool> deleteQrSpot(int id) async {
+    final headers = await _getHeaders(isJson: false);
+    final response = await http.delete(Uri.parse('$baseUrl/qr-spots/$id'), headers: headers);
+    _checkBlock(response);
     return response.statusCode == 200;
   }
 

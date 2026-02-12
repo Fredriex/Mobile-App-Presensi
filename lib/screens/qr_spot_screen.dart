@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -23,7 +22,6 @@ class _QrSpotScreenState extends State<QrSpotScreen> {
   List schedules = [];
   bool isLoading = true;
 
-  // URL Dasar untuk QR Code
   final String baseQrUrl = "https://presensimusik.infinityfreeapp.com/q/";
 
   @override
@@ -35,7 +33,6 @@ class _QrSpotScreenState extends State<QrSpotScreen> {
   Future<void> loadData() async {
     setState(() => isLoading = true);
     try {
-      // Asumsi fungsi ini ada di ApiService Anda sesuai kode awal
       final spotData = await api.getQrSpots();
       final scheduleData = await api.getSchedules();
 
@@ -47,56 +44,141 @@ class _QrSpotScreenState extends State<QrSpotScreen> {
         });
       }
     } catch (e) {
-      print("ERROR LOAD DATA: $e");
       if (mounted) setState(() => isLoading = false);
     }
   }
 
-  Future<void> updateSpot(int spotId, int? scheduleId) async {
-    // Tampilkan loading kecil atau snackbar proses
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Memperbarui Spot..."), duration: Duration(milliseconds: 500)),
-    );
+  // --- CRUD FUNCTIONS ---
 
-    await api.updateQrSpot(spotId, scheduleId);
-    await loadData(); // Reload agar UI sync
-
+  Future<void> _handleLinkSchedule(int spotId, int? scheduleId) async {
+    await api.updateQrSpot(spotId, scheduleId: scheduleId);
+    loadData();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Berhasil diperbarui!"), backgroundColor: Colors.green),
+        const SnackBar(
+          content: Text("Koneksi Jadwal Diperbarui"),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.green,
+        ),
       );
     }
   }
 
-  Future<void> saveQr() async {
-    // Minta Izin Penyimpanan (Untuk Android < 13)
-    var status = await Permission.storage.status;
-    if (!status.isGranted) {
-      await Permission.storage.request();
+  Future<void> _deleteSpot(int id) async {
+    bool confirm = await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Hapus Spot?"),
+        content: const Text("Spot ini akan hilang permanen dan QR Code lama tidak akan berfungsi lagi."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Batal")),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text("Hapus"),
+          ),
+        ],
+      ),
+    ) ??
+        false;
+
+    if (confirm) {
+      await api.deleteQrSpot(id);
+      loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Spot Dihapus")));
+      }
     }
+  }
+
+  // Form Dialog
+  void _showFormDialog({Map<String, dynamic>? item}) {
+    final nameCtrl = TextEditingController(text: item?['name'] ?? '');
+    final codeCtrl = TextEditingController(text: item?['unique_code'] ?? '');
+    final isEdit = item != null;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(isEdit ? "Edit Spot" : "Tambah Spot Baru", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              decoration: InputDecoration(
+                labelText: "Nama Lokasi",
+                hintText: "Contoh: Pintu Depan",
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                prefixIcon: const Icon(Icons.place),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: codeCtrl,
+              decoration: InputDecoration(
+                labelText: "Kode Unik (ID)",
+                hintText: "Contoh: DOOR_1",
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                prefixIcon: const Icon(Icons.qr_code),
+                helperText: "Kode ini akan menjadi isi QR Code",
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Batal")),
+          ElevatedButton(
+            onPressed: () async {
+              if (nameCtrl.text.isEmpty || codeCtrl.text.isEmpty) return;
+              Navigator.pop(ctx);
+
+              bool success;
+              if (isEdit) {
+                success = await api.updateQrSpot(item['id'], name: nameCtrl.text, uniqueCode: codeCtrl.text, scheduleId: -999);
+              } else {
+                success = await api.createQrSpot(nameCtrl.text, codeCtrl.text);
+              }
+
+              if (success) {
+                loadData();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isEdit ? "Data Diupdate" : "Spot Dibuat")));
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
+            child: const Text("Simpan"),
+          )
+        ],
+      ),
+    );
+  }
+
+  // --- QR FUNCTIONS ---
+
+  Future<void> saveQr() async {
+    var status = await Permission.storage.status;
+    if (!status.isGranted) await Permission.storage.request();
 
     final image = await screenshotController.capture();
     if (image == null) return;
 
     try {
-      final directory = await getApplicationDocumentsDirectory(); // Lebih aman di Android baru
-      // Atau gunakan getExternalStorageDirectory untuk folder publik (perlu izin lebih)
-
+      final directory = await getApplicationDocumentsDirectory();
       final fileName = "QR_${DateTime.now().millisecondsSinceEpoch}.png";
       final file = File("${directory.path}/$fileName");
-
       await file.writeAsBytes(image);
 
       if (mounted) {
-        Navigator.pop(context); // Tutup Dialog
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("QR disimpan di: ${file.path}"), backgroundColor: Colors.green),
+          SnackBar(content: Text("Disimpan di: ${file.path}"), backgroundColor: Colors.green),
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Gagal simpan: $e"), backgroundColor: Colors.red),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Gagal simpan gambar")));
     }
   }
 
@@ -110,13 +192,12 @@ class _QrSpotScreenState extends State<QrSpotScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text("QR Master", style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey)),
-              Text(spotName, style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 20)),
+              Text("MASTER QR CODE", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey, letterSpacing: 1.5)),
+              const SizedBox(height: 4),
+              Text(spotName, style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 22), textAlign: TextAlign.center),
             ],
           ),
         ),
-        // PERBAIKAN UTAMA DI SINI:
-        // Kita bungkus content dengan SizedBox agar lebarnya jelas
         content: SizedBox(
           width: double.maxFinite,
           child: SingleChildScrollView(
@@ -126,12 +207,12 @@ class _QrSpotScreenState extends State<QrSpotScreen> {
                 Screenshot(
                   controller: screenshotController,
                   child: Container(
-                    padding: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.all(25),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.grey.shade200),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.grey.shade200, width: 2),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, spreadRadius: 2)],
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -139,32 +220,32 @@ class _QrSpotScreenState extends State<QrSpotScreen> {
                         QrImageView(
                           data: "$baseQrUrl$uniqueCode",
                           version: QrVersions.auto,
-                          size: 200,
+                          size: 220,
                           backgroundColor: Colors.white,
-                          padding: const EdgeInsets.all(0), // Reset padding internal QR
+                          padding: EdgeInsets.zero,
                         ),
-                        const SizedBox(height: 10),
-                        Text(
-                          uniqueCode,
-                          style: GoogleFonts.sourceCodePro(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 2),
+                        const SizedBox(height: 15),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(8)),
+                          child: Text(uniqueCode, style: GoogleFonts.sourceCodePro(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87)),
                         ),
-                        const Text("Scan untuk Absen", style: TextStyle(fontSize: 10, color: Colors.grey)),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 25),
                 SizedBox(
                   width: double.infinity,
+                  height: 50,
                   child: ElevatedButton.icon(
                     onPressed: saveQr,
-                    icon: const Icon(Icons.download_rounded),
+                    icon: const Icon(Icons.save_alt_rounded),
                     label: const Text("Simpan ke Galeri"),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.indigo,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                 ),
@@ -179,165 +260,226 @@ class _QrSpotScreenState extends State<QrSpotScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA), // Background modern
+      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text("Titik QR (Spots)", style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87)),
-            Text("Kelola lokasi scan QR Code", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
+            Text("Kelola lokasi scan fisik", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
           ],
         ),
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black87),
         actions: [
-          IconButton(onPressed: loadData, icon: const Icon(Icons.refresh))
+          IconButton(onPressed: loadData, icon: const Icon(Icons.refresh)),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showFormDialog(),
+        backgroundColor: Colors.indigo,
+        elevation: 4,
+        icon: const Icon(Icons.add_location_alt_outlined, color: Colors.white),
+        label: Text("Spot Baru", style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: Colors.white)),
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : spots.isEmpty
           ? _buildEmptyState()
           : ListView.builder(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
         itemCount: spots.length,
         itemBuilder: (context, index) {
           final spot = spots[index];
-          return _buildSpotCard(spot);
+          return _buildModernSpotCard(spot);
         },
       ),
     );
   }
 
-  Widget _buildSpotCard(dynamic spot) {
-    // Cek apakah ada jadwal yang nempel
+  Widget _buildModernSpotCard(dynamic spot) {
     bool isLinked = spot['current_schedule_id'] != null;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(color: Colors.indigo.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, 8)),
         ],
       ),
       child: Column(
         children: [
-          // HEADER KARTU
+          // HEADER: Nama & Menu
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(20, 20, 8, 0),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Icon Bulat Besar
                 Container(
-                  padding: const EdgeInsets.all(10),
+                  width: 50,
+                  height: 50,
                   decoration: BoxDecoration(
                     color: isLinked ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    Icons.location_on_rounded,
-                    color: isLinked ? Colors.green : Colors.orange,
-                  ),
+                  child: Icon(Icons.qr_code_2, color: isLinked ? Colors.green : Colors.orange, size: 28),
                 ),
                 const SizedBox(width: 16),
+
+                // Info Utama
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        spot['name'] ?? "Lokasi Tanpa Nama",
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
                       Row(
                         children: [
-                          Icon(Icons.qr_code, size: 12, color: Colors.grey[600]),
-                          const SizedBox(width: 4),
-                          Text(
-                            "ID: ${spot['unique_code']}",
-                            style: GoogleFonts.sourceCodePro(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w600),
+                          Expanded(
+                            child: Text(
+                              spot['name'] ?? "Tanpa Nama",
+                              style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Text(
+                          spot['unique_code'] ?? '-',
+                          style: GoogleFonts.sourceCodePro(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black54),
+                        ),
                       ),
                     ],
                   ),
                 ),
-                IconButton(
-                  tooltip: "Lihat QR",
-                  onPressed: () => showQrDialog(spot['unique_code'], spot['name']),
-                  icon: const Icon(Icons.qr_code_2, size: 32, color: Colors.indigo),
+
+                // Menu 3 Titik (Edit/Delete)
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: Colors.grey),
+                  onSelected: (value) {
+                    if (value == 'edit') _showFormDialog(item: spot);
+                    if (value == 'delete') _deleteSpot(spot['id']);
+                  },
+                  itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                    const PopupMenuItem<String>(
+                      value: 'edit',
+                      child: Row(children: [Icon(Icons.edit, size: 20, color: Colors.blue), SizedBox(width: 12), Text('Edit Nama/Kode')]),
+                    ),
+                    const PopupMenuItem<String>(
+                      value: 'delete',
+                      child: Row(children: [Icon(Icons.delete, size: 20, color: Colors.red), SizedBox(width: 12), Text('Hapus Spot')]),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
 
-          const Divider(height: 1),
+          const SizedBox(height: 16),
 
-          // BAGIAN DROPDOWN (CONTROL PANEL)
+          // CONTROL PANEL (Jadwal)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(16),
-                bottomRight: Radius.circular(16),
-              ),
+              color: const Color(0xFFF8F9FC),
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+              border: Border(top: BorderSide(color: Colors.grey.shade100)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Jadwal Terhubung:", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w600)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text("JADWAL TERHUBUNG", style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                    // Badge Status
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isLinked ? Colors.green : Colors.grey[400],
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        isLinked ? "LIVE" : "IDLE",
+                        style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: Colors.grey.shade300),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<int?>(
-                      value: spot['current_schedule_id'],
-                      isExpanded: true,
-                      icon: const Icon(Icons.arrow_drop_down_circle_outlined, color: Colors.indigo),
-                      hint: const Text("Pilih Jadwal..."),
-                      items: [
-                        const DropdownMenuItem<int?>(
-                          value: null,
-                          child: Row(
-                            children: [
-                              Icon(Icons.highlight_off, color: Colors.red, size: 18),
-                              SizedBox(width: 8),
-                              Text("Tidak Terkait (Idle)", style: TextStyle(color: Colors.grey)),
+
+                // Row: Dropdown + Tombol Lihat QR
+                Row(
+                  children: [
+                    // Dropdown
+                    Expanded(
+                      child: Container(
+                        height: 48,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<int?>(
+                            value: spot['current_schedule_id'],
+                            isExpanded: true,
+                            icon: const Icon(Icons.arrow_drop_down_rounded),
+                            hint: Text("Pilih Jadwal...", style: GoogleFonts.poppins(fontSize: 13)),
+                            items: [
+                              const DropdownMenuItem<int?>(
+                                value: null,
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.link_off, size: 16, color: Colors.grey),
+                                    SizedBox(width: 8),
+                                    Text("Putus Koneksi (Idle)", style: TextStyle(color: Colors.grey, fontSize: 13)),
+                                  ],
+                                ),
+                              ),
+                              ...schedules.map<DropdownMenuItem<int?>>((s) {
+                                return DropdownMenuItem<int?>(
+                                  value: s['id'],
+                                  child: Text(s['name'], overflow: TextOverflow.ellipsis, style: GoogleFonts.poppins(fontSize: 13)),
+                                );
+                              }).toList(),
                             ],
+                            onChanged: (val) => _handleLinkSchedule(spot['id'], val),
                           ),
                         ),
-                        ...schedules.map<DropdownMenuItem<int?>>((s) {
-                          bool isActive = s['is_active'] == 1 || s['is_active'] == true;
-                          return DropdownMenuItem<int?>(
-                            value: s['id'],
-                            child: Row(
-                              children: [
-                                Icon(Icons.event, color: isActive ? Colors.green : Colors.grey, size: 18),
-                                const SizedBox(width: 8),
-                                Text(
-                                  s['name'],
-                                  style: TextStyle(
-                                      fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                                      color: isActive ? Colors.black87 : Colors.grey
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ],
-                      onChanged: (value) {
-                        updateSpot(spot['id'], value);
-                      },
+                      ),
                     ),
-                  ),
+
+                    const SizedBox(width: 10),
+
+                    // Tombol Lihat QR (Primary Action)
+                    SizedBox(
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () => showQrDialog(spot['unique_code'], spot['name']),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.indigo,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          elevation: 0,
+                        ),
+                        child: const Icon(Icons.qr_code_2, size: 24),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -352,12 +494,15 @@ class _QrSpotScreenState extends State<QrSpotScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.location_off_rounded, size: 80, color: Colors.grey[300]),
-          const SizedBox(height: 16),
-          Text(
-            "Belum ada Spot QR.",
-            style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 20)]),
+            child: Icon(Icons.add_location_alt_rounded, size: 60, color: Colors.indigo.withOpacity(0.3)),
           ),
+          const SizedBox(height: 20),
+          Text("Belum ada Spot QR", style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black54)),
+          const SizedBox(height: 8),
+          Text("Tekan tombol + untuk membuat\ntitik scan baru (Contoh: Pintu Depan)", textAlign: TextAlign.center, style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey)),
         ],
       ),
     );
